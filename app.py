@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import wraps
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'tu-clave-secreta-aqui' 
+app.config['SECRET_KEY'] = 'holamanumundo' 
 app.config['STATIC_FOLDER'] = 'static'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -412,4 +412,3 @@ if __name__ == '__main__':
     # Crea la carpeta de imágenes si no existe (Asegúrate de poner tus imágenes aquí)
     os.makedirs(os.path.join('static', 'images'), exist_ok=True)
     
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
