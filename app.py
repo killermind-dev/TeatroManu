@@ -14,11 +14,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # =================================================================
 # CONFIGURACIÓN DE SEGURIDAD
 # =================================================================
-ALLOWED_ADMIN_IPS = {
-    '192.168.10.25',# IP del administrador principal (Ejemplo)
-    '203.0.113.45',  # IP de un segundo administrador (Ejemplo)
-    '127.0.0.1' 
-} 
+ 
 
 # Variables globales
 current_poll = None
@@ -72,15 +68,6 @@ def get_poll_options_with_images(names):
 # DECORADORES
 # ----------------------------------------------------------------
 
-def ip_allowed_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        if client_ip not in ALLOWED_ADMIN_IPS:
-            return jsonify({'success': False, 'message': f'Acceso denegado: IP {client_ip} no autorizada.'}), 403
-        return f(*args, **kwargs)
-    return decorated_function
-
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -103,7 +90,6 @@ def display():
     return render_template('display.html')
 
 @app.route('/admin/login', methods=['GET', 'POST'])
-@ip_allowed_required 
 def admin_login():
     global admin_logged_in
     if request.method == 'POST':
@@ -119,13 +105,11 @@ def admin_login():
     return render_template('admin_login.html')
 
 @app.route('/admin/panel')
-@ip_allowed_required 
 @admin_required
 def admin_panel():
     return render_template('admin_panel.html')
 
 @app.route('/admin/logout')
-@ip_allowed_required
 def admin_logout():
     global admin_logged_in
     if session.get('admin'):
@@ -224,7 +208,6 @@ def start_poll():
 
 
 @app.route('/api/stop_poll', methods=['POST'])
-@ip_allowed_required
 @admin_required
 def stop_poll():
     global poll_active, poll_start_time, eliminated_participants, poll_results, current_poll
@@ -262,7 +245,6 @@ def stop_poll():
 
 
 @app.route('/api/declare_sotano', methods=['POST'])
-@ip_allowed_required
 @admin_required
 def declare_sotano():
     global poll_active, poll_start_time, eliminated_participants, poll_results, current_poll
