@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estado de la Votación - El Sótano</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        :root {
+            --color-bg: #121212;
+            --color-text: #E0E0E0;
+            --color-primary: #BB86FC;
+            --color-secondary: #03DAC6;
+            --color-elim: #CF6679;
+            --color-sotano: #4CAF50;
+            --color-timer: #007bff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+            text-align: center;
+            overflow: hidden;
+            transition: all 0.5s ease-in-out;
+        }
+
+        /* Contenedor Principal - Siempre ocupa toda la pantalla */
+        #pollStatus {
+            width: 100%;
+            height: 100%;
+            background: #1f1f1f;
+            padding: 2vh 2vw;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Encabezado - Tamaño adaptativo */
+        #pollQuestion {
+            font-size: clamp(1.5rem, 4vh, 4rem);
+            font-weight: bold;
+            margin-bottom: 1vh;
+            color: var(--color-secondary);
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+
+        /* Temporizador - Adaptativo */
+        #timerDisplay {
+            font-size: clamp(3rem, 10vh, 8rem);
+            font-weight: 900;
+            color: var(--color-timer);
+            margin: 1vh 0;
+            animation: pulse 1.5s infinite alternate;
+        }
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.05); }
+        }
+
+        /* Opciones de Votación - Grid adaptativo */
+        #pollOptions {
+            display: grid;
+            gap: clamp(10px, 1.5vh, 20px);
+            width: 100%;
+            max-height: 70vh;
+            overflow-y: auto;
+            padding: 1vh;
+        }
+
+        /* 1-4 opciones: 4 por fila */
+        #pollOptions[data-count="1"],
+        #pollOptions[data-count="2"],
+        #pollOptions[data-count="3"],
+        #pollOptions[data-count="4"] {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        /* 5-9 opciones: 5 por fila */
+        #pollOptions[data-count="5"],
+        #pollOptions[data-count="6"],
+        #pollOptions[data-count="7"],
+        #pollOptions[data-count="8"],
+        #pollOptions[data-count="9"] {
+            grid-template-columns: repeat(5, 1fr);
+        }
+
+        /* 10+ opciones: 5 por fila */
+        #pollOptions[data-count="10"],
+        #pollOptions[data-count="11"],
+        #pollOptions[data-count="12"],
+        #pollOptions[data-count="13"],
+        #pollOptions[data-count="14"],
+        #pollOptions[data-count="15"] {
+            grid-template-columns: repeat(5, 1fr);
+        }
+
+        /* Ajuste para pantallas muy pequeñas */
+        @media (max-width: 600px) {
+            #pollOptions {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+        }
+
+        .option-card {
+            background: #2b2b2b;
+            padding: clamp(8px, 1vh, 15px);
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            border: 2px solid #333;
+            opacity: 0.9;
+            transition: all 0.3s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .option-card img {
+            width: 100%;
+            height: clamp(120px, 20vh, 250px);
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: clamp(5px, 1vh, 10px);
+            border: 1px solid #333;
+        }
+
+        .option-name {
+            font-size: clamp(1rem, 2.5vh, 1.8rem);
+            font-weight: bold;
+            color: var(--color-text);
+            word-wrap: break-word;
+        }
+
+        /* Contador de Votos en Vivo */
+        .vote-count-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            font-size: clamp(2rem, 6vh, 4rem);
+            font-weight: 900;
+            border-radius: 10px;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .show-votes .vote-count-overlay {
+            opacity: 1; 
+        }
+
+        /* Estado "No Activo" */
+        #noPollMessage {
+            font-size: clamp(1.5rem, 4vh, 2.5rem);
+            color: var(--color-primary);
+            font-weight: 300;
+        }
+
+        /* Contenedor de Resultados */
+        #resultsContainer {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2vh;
+            overflow-y: auto;
+        }
+
+        .result-header {
+            font-size: clamp(1.5rem, 4vh, 2.5rem);
+            font-weight: 700;
+            margin-bottom: clamp(15px, 3vh, 30px);
+            line-height: 1.3;
+        }
+
+        .result-list {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: clamp(10px, 2vh, 20px);
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+        }
+
+        .result-item {
+            width: clamp(150px, 25vw, 300px);
+            font-size: clamp(1rem, 2vh, 1.5rem);
+            padding: clamp(10px, 1.5vh, 15px);
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            border: 5px solid transparent;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .result-item img {
+            width: 100%;
+            height: clamp(100px, 20vh, 200px);
+            object-fit: cover;
+            border-radius: 5px;
+            margin-bottom: clamp(5px, 1vh, 10px);
+        }
+        
+        /* Estilos de resultado específicos */
+        .eliminated-visual {
+            background: #550000;
+            border-color: var(--color-elim);
+        }
+
+        .eliminated-visual img {
+            filter: grayscale(100%);
+        }
+
+        .sotano-visual {
+            background: #004d00;
+            border-color: var(--color-sotano);
+        }
+
+        .sotano-visual img {
+            border: 3px solid var(--color-sotano);
+        }
+        
+        .header-empate {
+            color: yellow !important;
+            text-shadow: 0 0 10px rgba(255, 255, 0, 0.5);
+        }
+
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f1f1f;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--color-primary);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="pollStatus">
+        <div id="pollContent">
+            <p id="noPollMessage">Esperando inicio de la votación...</p>
+        </div>
+        <div id="resultsContainer" style="display: none;">
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const pollStatus = document.getElementById('pollStatus');
+        const pollContent = document.getElementById('pollContent');
+        const resultsContainer = document.getElementById('resultsContainer');
+        let currentPollData = null; 
+        let countdownInterval;
+
+        function updateTimer(secondsLeft) {
+            let timerHtml = `<div id="timerDisplay">${secondsLeft}</div>`;
+            return timerHtml;
+        }
+        
+        function updateLiveVotes(results) {
+            const pollOptionsContainer = document.getElementById('pollOptions');
+            if (!pollOptionsContainer) return;
+
+            const optionCards = pollOptionsContainer.querySelectorAll('.option-card');
+            optionCards.forEach(card => {
+                const nameElement = card.querySelector('.option-name');
+                const name = nameElement ? nameElement.textContent : '';
+                const votes = results[name] !== undefined ? results[name] : 0;
+
+                let overlay = card.querySelector('.vote-count-overlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.className = 'vote-count-overlay';
+                    card.appendChild(overlay);
+                }
+                
+                overlay.textContent = votes;
+                card.classList.add('show-votes'); 
+            });
+        }
+
+        function displayPoll(pollData) {
+            const { poll, timer } = pollData;
+            currentPollData = poll;
+            resultsContainer.style.display = 'none'; 
+
+            let optionsHtml = '';
+            
+            if (poll.options.length > 0 && poll.options[0].name) { 
+                optionsHtml = `<div id="pollOptions" data-count="${poll.options.length}">`;
+                poll.options.forEach(option => {
+                    const imageUrl = option.image_url || 'static/images/placeholder.jpg'; 
+                    optionsHtml += `
+                        <div class="option-card">
+                            <img src="${imageUrl}" alt="${option.name}">
+                            <div class="vote-count-overlay">0</div>
+                            <div class="option-name">${option.name}</div>
+                        </div>
+                    `;
+                });
+                optionsHtml += '</div>';
+            } else if (poll.options.length > 0) {
+                 optionsHtml = `<div id="pollOptions" data-count="${poll.options.length}">`;
+                 poll.options.forEach(option => {
+                    optionsHtml += `<div class="option-card"><div class="option-name">${option}</div></div>`;
+                 });
+                 optionsHtml += '</div>';
+            }
+            
+            pollContent.innerHTML = `
+                <div id="pollQuestion">${poll.question}</div>
+                ${updateTimer(timer)}
+                ${optionsHtml}
+            `;
+            
+            startCountdown(timer);
+        }
+        
+        async function displayFinalResults(currentResults, round) {
+            const configResponse = await fetch('/api/config');
+            const config = await configResponse.json();
+            const eliminatedNames = Array.from(config.eliminated_participants || []);
+            const allParticipantsData = config.all_participants_data || []; 
+            
+            let impactados = [];
+            
+            if (currentResults && Object.keys(currentResults).length > 0) {
+                 const sortedResults = Object.entries(currentResults).sort((a, b) => b[1] - a[1]);
+                 const maxVotes = sortedResults[0] ? sortedResults[0][1] : 0;
+                 
+                 impactados = sortedResults.filter(([name, votes]) => votes === maxVotes && maxVotes > 0).map(([name]) => name);
+
+                 if (maxVotes === 0) impactados = [];
+            } 
+            
+            let headerText = '';
+            let resultListHtml = '';
+            
+            const getImageUrl = (name) => {
+                const participant = allParticipantsData.find(p => p.name === name);
+                if (participant) {
+                    return participant.image_url;
+                }
+                const sanitizedName = name.toLowerCase().replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u').replace(/[^a-z0-9]/g, '');
+                return `/static/images/${sanitizedName}.jpg`;
+            };
+
+            const isEmpate = impactados.length > 1;
+            const isSingular = impactados.length === 1;
+            let headerClass = '';
+
+            if (round === 1) {
+                if (isEmpate) {
+                    headerText = `🚨 ¡HAY EMPATE! LOS PERSONAJES ELIMINADOS SON`;
+                    headerClass = 'header-empate';
+                } else if (isSingular) {
+                    headerText = `🔴 ¡EL PERSONAJE ELIMINADO ES!`;
+                } else {
+                    headerText = `🔴 ¡EL O LOS PERSONAJES ELIMINADOS SON!`;
+                }
+                
+                if (impactados.length > 0) {
+                    resultListHtml += '<ul class="result-list">';
+                    impactados.forEach(name => {
+                        const url = getImageUrl(name); 
+                        resultListHtml += `
+                            <li class="result-item eliminated-visual">
+                                <img src="${url}" alt="${name}">
+                                <span>${name}</span>
+                                <span style="font-size:0.5em;">(${currentResults[name]} votos)</span>
+                            </li>
+                        `;
+                    });
+                    resultListHtml += '</ul>';
+                } else {
+                    resultListHtml = `<p style="font-size:1.5em; color:var(--color-primary);">Nadie ha sido eliminado en esta ronda (o no hubo votos).</p>`;
+                }
+
+            } else if (round === 2) {
+                 if (isEmpate) {
+                    headerText = `🚨 ¡HAY EMPATE! LOS PERSONAJES QUE SE QUEDAN EN EL SÓTANO SON`;
+                    headerClass = 'header-empate';
+                } else if (isSingular) {
+                    headerText = `🏠 ¡EL PERSONAJE QUE SE QUEDA SOLO EN EL SÓTANO ES!`;
+                } else {
+                    headerText = `🏠 ¡EL O LOS PERSONAJES QUE SE QUEDAN EN EL SÓTANO SON!`;
+                }
+                
+                if (impactados.length > 0) {
+                    resultListHtml += '<ul class="result-list">';
+                    impactados.forEach(name => {
+                        const url = getImageUrl(name); 
+                        resultListHtml += `
+                            <li class="result-item sotano-visual">
+                                <img src="${url}" alt="${name}">
+                                <span>${name}</span>
+                                <span style="font-size:0.5em;">(${currentResults[name]} votos)</span>
+                            </li>
+                        `;
+                    });
+                    resultListHtml += '</ul>';
+                    
+                    const allNames = config.participants || [];
+                    const finalWinners = allNames.filter(p => !eliminatedNames.includes(p));
+                    
+                    if (finalWinners.length > 0) {
+                        resultListHtml += `<p style="font-size:1.5em; margin-top:30px; color:var(--color-primary);">🏆 Los Supervivientes / Ganadores son: ${finalWinners.join(', ')}</p>`;
+                    }
+
+                } else {
+                    resultListHtml = `<p style="font-size:1.5em; color:var(--color-primary);">El sótano queda vacío (o no hubo votos).</p>`;
+                }
+            } else {
+                headerText = '🗳️ VOTACIÓN FINALIZADA';
+                resultListHtml = `<p style="font-size:1.5em; color:var(--color-secondary);">Consulta los resultados en el panel de administración.</p>`;
+            }
+            
+            pollContent.innerHTML = '';
+            resultsContainer.innerHTML = `<div class="result-header ${headerClass}" style="color:${round === 1 ? 'var(--color-elim)' : 'var(--color-sotano)'}">${headerText}</div>${resultListHtml}`;
+            resultsContainer.style.display = 'flex';
+        }
+
+        function startCountdown(initialTime) {
+            let time = initialTime;
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+
+            const updateDisplay = () => {
+                const timerElement = document.getElementById('timerDisplay');
+                if (timerElement) {
+                    timerElement.textContent = time;
+                }
+            };
+            
+            updateDisplay(); 
+
+            countdownInterval = setInterval(() => {
+                time--;
+                updateDisplay();
+
+                if (time <= 0) {
+                    clearInterval(countdownInterval);
+                }
+            }, 1000);
+        }
+        
+        async function loadInitialState() {
+            const response = await fetch('/api/current_poll');
+            const data = await response.json();
+            
+            if (data.active) {
+                displayPoll(data);
+                startCountdown(data.timer);
+            } else {
+                pollContent.innerHTML = '<p id="noPollMessage">Esperando inicio de la votación...</p>';
+            }
+        }
+
+        socket.on('new_poll', (data) => {
+            displayPoll(data);
+            updateLiveVotes({}); 
+        });
+
+        socket.on('poll_ended', (finalResults) => {
+             if (countdownInterval) clearInterval(countdownInterval);
+             
+             const round = currentPollData ? currentPollData.round : 0;
+             
+             const pollOptionsContainer = document.getElementById('pollOptions');
+             if (pollOptionsContainer) {
+                 pollOptionsContainer.querySelectorAll('.option-card').forEach(card => card.classList.remove('show-votes'));
+             }
+
+             setTimeout(() => {
+                 displayFinalResults(finalResults, round);
+             }, 1000); 
+        });
+
+        socket.on('live_votes_update', (results) => {
+            updateLiveVotes(results);
+        });
+
+        loadInitialState();
+    </script>
+</body>
+</html>

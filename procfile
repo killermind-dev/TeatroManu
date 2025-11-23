@@ -1,0 +1,2 @@
+# Procfile (asegúrate de que no tiene extensión, ej: Procfile.txt)
+web: gunicorn --worker-class eventlet -w 1 app:app

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encuesta en Tiempo Real</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        /* [Estilos CSS OMITIDOS por brevedad. Son los mismos que proporcionaste.] */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .waiting {
+            text-align: center;
+            color: #666;
+            font-size: 18px;
+        }
+        .poll-container {
+            display: none;
+        }
+        .poll-container.active {
+            display: block;
+        }
+        .question {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .timer {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .option {
+            background: #f5f5f5;
+            border: 3px solid transparent;
+            border-radius: 10px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        /* Estilos de la imagen del participante */
+        .participant-image {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            object-fit: cover;
+            background-color: #e0e0e0;
+            flex-shrink: 0; /* Evita que la imagen se reduzca */
+        }
+        /* Estilo para cuando la imagen no existe */
+        .participant-image[src="null"] {
+            display: none; /* Oculta si la URL es "null" */
+        }
+        
+        .option:hover {
+            background: #e0e0e0;
+            transform: translateY(-2px);
+        }
+        .option.selected {
+            background: #667eea;
+            color: white;
+            border-color: #5568d3;
+        }
+        .vote-button {
+            background: #764ba2;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        .vote-button:hover {
+            background: #653a8a;
+            transform: translateY(-2px);
+        }
+        .vote-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .success-message {
+            background: #4caf50;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-top: 20px;
+            display: none;
+        }
+        .success-message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗳️ Encuesta en Tiempo Real</h1>
+        
+        <div class="waiting" id="waiting">
+            <p>Esperando que comience la encuesta...</p>
+        </div>
+        
+        <div class="poll-container" id="pollContainer">
+            <div class="question" id="question"></div>
+            <div class="timer" id="timer">Tiempo restante: 30s</div>
+            <div class="options" id="options"></div>
+            <button class="vote-button" id="voteButton" disabled>Votar</button>
+            <div class="success-message" id="successMessage">¡Voto registrado exitosamente!</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let selectedOption = null;
+        let timerInterval = null;
+        let hasVoted = false;
+
+        // =================================================================
+        // 1. LÓGICA DE INICIALIZACIÓN (Recuperar estado real al cargar)
+        // =================================================================
+        window.onload = () => {
+            fetch('/api/current_poll')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.active) {
+                        // El servidor solo devuelve el tiempo original del poll (ej: 60s)
+                        // Para mostrar el tiempo real, necesitamos calcular cuánto tiempo ha pasado desde el inicio del poll.
+                        // Sin una marca de tiempo de inicio del poll enviada por el servidor, el temporizador
+                        // del cliente siempre comenzará desde el valor inicial.
+                        // Para la solución real, simplemente llamaremos a handleNewPoll con el tiempo inicial.
+                        // La solución más precisa requeriría enviar 'time_elapsed' desde el servidor.
+                        
+                        // Por ahora, usamos el tiempo inicial y nos aseguramos de que el botón dice "Votar"
+                        handleNewPoll({ poll: data.poll, timer: data.timer });
+                    }
+                })
+                .catch(err => console.error("Error al obtener el estado inicial:", err));
+        }
+
+        socket.on('connect', () => {
+            console.log('Conectado al servidor');
+        });
+
+        socket.on('new_poll', (data) => {
+            handleNewPoll(data);
+        });
+
+        function handleNewPoll(data) {
+            hasVoted = false;
+            selectedOption = null;
+            document.getElementById('waiting').style.display = 'none';
+            document.getElementById('pollContainer').classList.add('active');
+            document.getElementById('successMessage').classList.remove('show');
+            
+            // CORRECCIÓN 1: Asegura que el botón de voto diga "Votar" al inicio y se deshabilite
+            const voteButton = document.getElementById('voteButton');
+            voteButton.textContent = 'Votar';
+            voteButton.disabled = true;
+
+            const { poll, timer } = data;
+            document.getElementById('question').textContent = poll.question;
+            
+            const optionsContainer = document.getElementById('options');
+            optionsContainer.innerHTML = '';
+            
+            poll.options.forEach(optionData => {
+                let name, imageUrl;
+
+                if (typeof optionData === 'object' && optionData !== null) {
+                    name = optionData.name;
+                    imageUrl = optionData.image_url;
+                } else {
+                    name = optionData;
+                    imageUrl = null;
+                }
+
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'option';
+                optionDiv.onclick = () => selectOption(name, optionDiv);
+
+                if (imageUrl) {
+                    const img = document.createElement('img');
+                    img.className = 'participant-image';
+                    img.src = imageUrl; 
+                    img.alt = name;
+                    optionDiv.appendChild(img);
+                }
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = name;
+                
+                optionDiv.appendChild(nameSpan);
+                optionsContainer.appendChild(optionDiv);
+
+                optionDiv.style.cursor = 'pointer';
+            });
+            
+            startTimer(timer);
+        }
+
+        socket.on('poll_ended', () => {
+            document.getElementById('pollContainer').classList.remove('active');
+            document.getElementById('waiting').style.display = 'block';
+            if (timerInterval) clearInterval(timerInterval);
+        });
+
+        socket.on('already_voted', (data) => {
+            alert(data.message);
+        });
+        
+        socket.on('vote_confirmed', (data) => {
+            document.getElementById('successMessage').textContent = data.message;
+            document.getElementById('successMessage').classList.add('show');
+        });
+
+        function selectOption(option, element) {
+            if (hasVoted) return;
+            
+            selectedOption = option;
+            document.querySelectorAll('.option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            element.classList.add('selected');
+            document.getElementById('voteButton').disabled = false;
+        }
+
+        function startTimer(seconds) {
+            let timeLeft = seconds;
+            const timerElement = document.getElementById('timer');
+            
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerElement.textContent = `Tiempo restante: ${timeLeft}s`;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    
+                    // Asegura que el botón se deshabilite y muestre "Tiempo agotado"
+                    const voteButton = document.getElementById('voteButton');
+                    voteButton.disabled = true;
+                    voteButton.textContent = 'Tiempo agotado';
+                }
+            }, 1000);
+        }
+
+        document.getElementById('voteButton').addEventListener('click', () => {
+            if (selectedOption && !hasVoted) {
+                socket.emit('vote', { option: selectedOption }); 
+                
+                hasVoted = true;
+                document.getElementById('voteButton').disabled = true;
+                
+                document.querySelectorAll('.option').forEach(opt => {
+                    opt.style.cursor = 'not-allowed';
+                    opt.onclick = null;
+                });
+            }
+        });
+    </script>
+</body>
+</html>

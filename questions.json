@@ -1,0 +1,33 @@
+{
+  "participants": [
+    "Don Jose",
+    "Valeria",
+    "Eliana",
+    "Marina",
+    "Ariana",
+    "Javier",
+    "Mateo",
+    "Violeta",
+    "pizza"
+  ],
+  "questions": [
+    {
+      "question": "¿Cuál es tu color favorito?",
+      "options": [
+        "Rojo",
+        "Azul",
+        "Verde",
+        "Amarillo"
+      ]
+    },
+    {
+      "question": "¿Cuál es tu comida favorita?",
+      "options": [
+        "Pizza",
+        "Hamburguesa",
+        "Sushi",
+        "Tacos"
+      ]
+    }
+  ]
+}
